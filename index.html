@@ -1,0 +1,1952 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>COC7 战斗控制台 v3.4 (Fixes)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* =====================================================
+           RATIONAL GRID & ARCHIVE - 理性几何设计系统 v2.0
+           优化了信息层级与阅读体验
+           ===================================================== */
+        :root {
+            --color-player: #2563eb;
+            --color-enemy: #dc2626;
+            --color-border: #111;
+            --color-bg-subtle: #f3f4f6;
+            --faction-strip-width: 4px;
+        }
+
+        * { 
+            box-sizing: border-box; 
+            border-radius: 0 !important;
+        }
+        
+        html, body { 
+            height: 100vh;
+            height: 100dvh;
+            width: 100vw;
+            margin: 0; 
+            padding: 0;
+            overflow: hidden; 
+            position: fixed;
+            overscroll-behavior: none;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: #111;
+        }
+
+        #root {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .main-layout {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header { flex: 0 0 56px; }
+
+        main {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+            height: calc(100% - 56px);
+            display: flex;
+            flex-direction: column;
+            min-height: 0; 
+        }
+
+        /* 三栏布局 */
+        .combat-grid {
+            display: grid;
+            grid-template-columns: 280px 1fr 320px; /* 右侧日志稍宽一点 */
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .panel-scroll {
+            height: 100%;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+        }
+
+        .panel-left {
+            background-color: #fff;
+            border-right: 1px solid var(--color-border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-right {
+            background-color: #fff;
+            border-left: 1px solid var(--color-border);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        .log-scroll-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            -webkit-overflow-scrolling: touch;
+            background: #fafafa;
+        }
+
+        .panel-center {
+            position: relative;
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .action-area {
+            flex: 1;
+            position: relative;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            display: flex;
+            align-items: flex-start; /* 顶对齐更自然 */
+            justify-content: center;
+            min-height: 0;
+            padding-top: 20px;
+        }
+
+        .centered-card {
+            width: 90%;
+            max-width: 480px; /* 稍微加宽 */
+            max-height: 95%;
+            overflow-y: auto;
+            background: #fff;
+            border: 2px solid var(--color-border);
+            z-index: 10;
+            margin-bottom: 20px;
+            box-shadow: 4px 4px 0px rgba(0,0,0,0.1); /* 增加一点立体感 */
+        }
+
+        /* 设置页面 */
+        .setup-grid {
+            display: flex;
+            height: 100%;
+            overflow: hidden;
+            flex-direction: row; 
+        }
+
+        .setup-sidebar {
+            width: 280px;
+            background-color: #f9fafb;
+            flex-shrink: 0;
+            height: 100%;
+            overflow-y: auto;
+            border-right: 1px solid var(--color-border);
+        }
+
+        .setup-content {
+            flex: 1;
+            background-color: #fff;
+            height: 100%;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        /* KP面板 */
+        .kp-panel {
+            position: fixed;
+            top: 56px;
+            right: 0;
+            bottom: 0;
+            width: 380px;
+            background: #fff;
+            border-left: 3px solid var(--color-enemy);
+            z-index: 100;
+            transform: translateX(100%);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            overflow-y: auto;
+            box-shadow: -10px 0 20px rgba(0,0,0,0.1);
+        }
+        .kp-panel.open { transform: translateX(0); }
+
+        /* 滚动条美化 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #ccc; }
+        ::-webkit-scrollbar-thumb:hover { background: #999; }
+
+        /* =====================================================
+           角色卡片 - 优化层级
+           ===================================================== */
+        .char-card {
+            background: #fff;
+            color: #000;
+            border-bottom: 1px solid #e5e7eb;
+            transition: all 0.1s ease;
+            cursor: pointer;
+            position: relative;
+        }
+        .char-card:hover { background: #f9fafb; }
+        
+        .faction-strip-player { border-left: var(--faction-strip-width) solid var(--color-player) !important; }
+        .faction-strip-enemy { border-left: var(--faction-strip-width) solid var(--color-enemy) !important; }
+        
+        /* 选中状态 - 修改为灰色背景 */
+        .char-card.selected {
+            background: #f3f4f6 !important; /* 明显的浅灰色背景 */
+            border-left-width: 6px !important;
+        }
+        .char-card.selected::before {
+            content: "▶";
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 10px;
+            color: #000;
+        }
+        
+        /* 目标选中 */
+        .char-card.target-selected {
+            background: #fef2f2 !important; /* 淡淡的红色背景 */
+        }
+        .char-card.target-selected .char-name {
+            color: var(--color-enemy);
+            text-decoration: underline;
+        }
+
+        /* =====================================================
+           数字键盘 & 输入
+           ===================================================== */
+        .numpad-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(2px);
+            z-index: 9999;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+        }
+        .numpad-container {
+            background: #fff;
+            width: 100%;
+            max-width: 420px;
+            padding: 20px;
+            padding-bottom: calc(20px + env(safe-area-inset-bottom, 0));
+            border-top: 4px solid #000;
+        }
+        .numpad-display {
+            font-size: 42px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            text-align: center;
+            padding: 12px;
+            background: #f3f4f6;
+            color: #000;
+            margin-bottom: 20px;
+            font-weight: bold;
+            letter-spacing: -1px;
+        }
+        .numpad-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+        .numpad-btn {
+            height: 56px;
+            font-size: 20px;
+            font-weight: 600;
+            border: 1px solid #e5e7eb;
+            background: #fff;
+            color: #000;
+            cursor: pointer;
+            transition: all 0.1s;
+        }
+        .numpad-btn:active { background: #f3f4f6; transform: scale(0.98); }
+        .numpad-btn.confirm { background: #000; color: #fff; border-color: #000; }
+        .numpad-btn.confirm:active { background: #333; }
+
+        .smart-input-container {
+            display: flex;
+            flex-direction: column;
+        }
+        .smart-input-label {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #6b7280; /* Gray-500 */
+            margin-bottom: 4px;
+        }
+        .smart-input-value {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 15px;
+            padding: 8px 10px;
+            border: 1px solid #d1d5db;
+            background: #fff;
+            cursor: pointer;
+            min-height: 38px;
+            display: flex;
+            align-items: center;
+            transition: border-color 0.15s;
+        }
+        .smart-input-value:hover { border-color: #000; }
+        .smart-input-value.readonly {
+            background: #f9fafb;
+            color: #6b7280;
+            border-color: #e5e7eb;
+            cursor: default;
+        }
+
+        /* =====================================================
+           Step Dice 优化
+           ===================================================== */
+        .step-dice-overlay {
+            background: rgba(0,0,0,0.9);
+            backdrop-filter: blur(5px);
+        }
+        .step-dice-container {
+            border: 1px solid #333;
+            box-shadow: 0 0 40px rgba(0,0,0,0.5);
+        }
+        .dice-block {
+            border-radius: 4px !important; /* 骰子稍微圆一点点 */
+        }
+
+        /* =====================================================
+           移动端适配
+           ===================================================== */
+        .mobile-nav { display: none; }
+
+        @media (max-width: 1024px) {
+            input, select, textarea { font-size: 16px !important; }
+
+            /* 竖屏 */
+            @media (orientation: portrait) {
+                .combat-grid { display: flex; flex-direction: column; width: 100%; }
+                .panel-left, .panel-center, .panel-right { display: none; width: 100%; height: 100%; border: none; }
+                .panel-mobile-active { display: flex !important; flex-direction: column; }
+                .setup-grid { flex-direction: column !important; }
+                
+                .setup-sidebar {
+                    width: 100% !important;
+                    height: auto !important;
+                    max-height: 35dvh;
+                    border-right: none !important;
+                    border-bottom: 2px solid #000;
+                }
+                .setup-content { width: 100% !important; padding-bottom: 100px !important; }
+
+                .mobile-nav { 
+                    display: flex !important; 
+                    position: fixed;
+                    bottom: 0; left: 0; right: 0;
+                    height: 56px;
+                    background: #fff;
+                    border-top: 1px solid #e5e7eb;
+                    z-index: 9000;
+                    box-shadow: 0 -4px 10px rgba(0,0,0,0.05);
+                }
+
+                .centered-card {
+                    width: 100%;
+                    max-width: none;
+                    border: none;
+                    box-shadow: none;
+                    margin-bottom: 80px;
+                    background: transparent;
+                }
+                
+                .action-area { padding: 10px; background: #fff; }
+            }
+
+            /* 横屏 */
+            @media (orientation: landscape) {
+                .combat-grid { display: flex !important; flex-direction: row !important; }
+                .panel-left { display: flex !important; width: 220px !important; }
+                .panel-center { display: flex !important; flex: 1 !important; }
+                .action-area { flex: 1 !important; }
+                .panel-right { display: flex !important; width: 260px !important; }
+                .mobile-nav { display: none !important; }
+                .centered-card { max-height: 90%; margin-bottom: 0; }
+            }
+        }
+
+        /* =====================================================
+           UI 组件样式优化
+           ===================================================== */
+        /* 日志条目 */
+        .log-item {
+            padding: 8px 10px;
+            border-left: 3px solid #ccc;
+            margin-bottom: 8px;
+            font-size: 12px;
+            line-height: 1.5;
+            background: #fff;
+            color: #333;
+        }
+        .log-item.damage { border-left-color: #ef4444; background: #fef2f2; }
+        .log-item.success { border-left-color: #22c55e; background: #f0fdf4; }
+        .log-item.roll { border-left-color: #3b82f6; background: #eff6ff; }
+        .log-item.system { border-left-color: #000; background: #f3f4f6; color: #666; font-style: italic; }
+
+        /* 通用标签 */
+        .label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #6b7280;
+            margin-bottom: 4px;
+        }
+
+        /* 操作块 */
+        .action-block {
+            border: 1px solid #e5e7eb;
+            padding: 16px;
+            margin-bottom: 16px;
+            background: #fff;
+            position: relative;
+        }
+        .action-block:hover { border-color: #000; }
+
+        .action-block-title {
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+            color: #111;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        /* 按钮重构 */
+        .action-btn {
+            width: 100%;
+            padding: 14px;
+            font-weight: 600;
+            font-size: 14px;
+            border: 1px solid #000;
+            background: #fff;
+            color: #000;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .action-btn:hover { background: #000; color: #fff; }
+        .action-btn:active { transform: scale(0.99); }
+        
+        .action-btn.primary {
+            background: #000;
+            color: #fff;
+        }
+        .action-btn.primary:hover { background: #333; border-color: #333; }
+        
+        .action-btn span.detail {
+            font-family: ui-monospace, monospace;
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        
+        /* 状态按钮 */
+        .status-btn {
+            padding: 8px;
+            font-size: 11px;
+            font-weight: bold;
+            text-align: center;
+            border: 1px solid #e5e7eb;
+            background: #fff;
+            color: #9ca3af;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .status-btn:hover { border-color: #ccc; color: #666; }
+        .status-btn.active-danger { background: #fef2f2; color: #dc2626; border-color: #dc2626; }
+        .status-btn.active-dark { background: #1f2937; color: #fff; border-color: #1f2937; }
+
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+const { useState, useEffect, useMemo, useRef } = React;
+
+// ... (KEEPING ALL LOGIC CONSTANTS UNCHANGED) ...
+const BASE_CHARACTER = {
+    str: 50, con: 50, siz: 60, dex: 50,
+    fight: 50, firearms: 20, dodge: 25,
+    firstAid: 30, medicine: 5,
+    armorValue: 0, hasGunReady: false,
+    meleeWeapon: { name: "拳头", damage: "1D3", type: "melee", impale: false },
+    rangedWeapon: null,
+    weapons: [], 
+    customSkills: [], 
+    status: { majorWound: false, dying: false, unconscious: false, prone: false, defenseUsedThisRound: false }
+};
+
+const MELEE_WEAPONS = [
+    { name: "拳头", damage: "1D3", type: "melee", impale: false },
+    { name: "小刀", damage: "1D4", type: "melee", impale: true },
+    { name: "匕首", damage: "1D4+2", type: "melee", impale: true },
+    { name: "棒球棍", damage: "1D8", type: "melee", impale: false },
+    { name: "斧头", damage: "1D8+2", type: "melee", impale: true },
+    { name: "长剑", damage: "1D8+1", type: "melee", impale: true },
+    { name: "大刀", damage: "1D8", type: "melee", impale: true },
+];
+
+const RANGED_WEAPONS = [
+    { name: ".38左轮", damage: "1D10", type: "ranged", impale: true, range: 15, ammo: 6, maxAmmo: 6, malfunction: 100 },
+    { name: ".45自动手枪", damage: "1D10+2", type: "ranged", impale: true, range: 15, ammo: 7, maxAmmo: 7, malfunction: 100 },
+    { name: "9mm手枪", damage: "1D10", type: "ranged", impale: true, range: 15, ammo: 15, maxAmmo: 15, malfunction: 98 },
+    { name: "步枪", damage: "2D6+4", type: "ranged", impale: true, range: 110, ammo: 5, maxAmmo: 5, malfunction: 100 },
+    { name: "霰弹枪", damage: "4D6", type: "ranged", impale: false, range: 10, ammo: 2, maxAmmo: 2, malfunction: 100 },
+    { name: "冲锋枪", damage: "1D10", type: "ranged", impale: true, range: 20, ammo: 30, maxAmmo: 30, malfunction: 96, autoFire: true },
+];
+
+const WEAPON_PRESETS = [...MELEE_WEAPONS, ...RANGED_WEAPONS];
+
+// ... (KEEPING ALL HELPER FUNCTIONS UNCHANGED) ...
+const rollDice = (expr) => {
+    const match = expr.match(/(\d+)[dD](\d+)(?:\+(\d+))?(?:\-(\d+))?/);
+    if (!match) return { total: parseInt(expr) || 0, rolls: [] };
+    const [, numStr, sidesStr, plusStr, minusStr] = match;
+    const num = parseInt(numStr), sides = parseInt(sidesStr);
+    const plus = parseInt(plusStr) || 0, minus = parseInt(minusStr) || 0;
+    const rolls = Array(num).fill().map(() => Math.floor(Math.random() * sides) + 1);
+    return { total: rolls.reduce((s, r) => s + r, 0) + plus - minus, rolls };
+};
+
+const getMaxDamage = (expr) => {
+    const match = expr.match(/(\d+)[dD](\d+)(?:\+(\d+))?(?:\-(\d+))?/);
+    if (!match) return parseInt(expr) || 0;
+    const [, numStr, sidesStr, plusStr, minusStr] = match;
+    return parseInt(numStr) * parseInt(sidesStr) + (parseInt(plusStr) || 0) - (parseInt(minusStr) || 0);
+};
+
+const calcDerived = (c) => {
+    const hp = Math.floor((c.con + c.siz) / 10);
+    const mov = c.str < c.siz && c.dex < c.siz ? 7 : c.str > c.siz && c.dex > c.siz ? 9 : 8;
+    const sum = c.str + c.siz;
+    let db = '0', build = 0;
+    if (sum <= 64) { db = '-2'; build = -2; }
+    else if (sum <= 84) { db = '-1'; build = -1; }
+    else if (sum <= 124) { db = '0'; build = 0; }
+    else if (sum <= 164) { db = '1D4'; build = 1; }
+    else if (sum <= 204) { db = '1D6'; build = 2; }
+    else if (sum <= 284) { db = '2D6'; build = 3; }
+    else { db = '3D6'; build = 4; }
+    return { maxHp: hp, mov, db, build };
+};
+
+const calculateSuccessLevel = (roll, skill) => {
+    if (roll === 1) return 4;
+    if (roll <= Math.floor(skill / 5)) return 3;
+    if (roll <= Math.floor(skill / 2)) return 2;
+    if (roll <= skill) return 1;
+    if (skill < 50 && roll >= 96) return -1;
+    if (roll === 100) return -1;
+    return 0;
+};
+
+const getSuccessLabel = (level) => ({ 4: '大成功', 3: '极难成功', 2: '困难成功', 1: '常规成功', 0: '失败', '-1': '大失败' }[level] || '未知');
+
+const executeOpposedCheck = (atkSkill, defSkill, atkRoll, defRoll, defType) => {
+    const atkLvl = calculateSuccessLevel(atkRoll, atkSkill);
+    const defLvl = calculateSuccessLevel(defRoll, defSkill);
+    if (atkLvl > defLvl) return { success: true, winner: 'attacker', atkLvl, defLvl };
+    if (defLvl > atkLvl) return { success: false, winner: 'defender', atkLvl, defLvl };
+    return { success: defType === 'counter', winner: defType === 'counter' ? 'attacker' : 'defender', atkLvl, defLvl, isTie: true };
+};
+
+const calculateDamage = (weapon, attacker, successLevel, isCounterAttack) => {
+    if (isCounterAttack) successLevel = Math.min(successLevel, 2);
+    const wDmg = rollDice(weapon.damage);
+    const dbDmg = attacker.db !== '0' ? rollDice(attacker.db) : { total: 0, rolls: [] };
+    let total = wDmg.total + dbDmg.total;
+    let log = `${wDmg.total}(武器)`;
+    if (dbDmg.total !== 0) log += ` + ${dbDmg.total}(DB)`;
+    
+    if (successLevel >= 3) {
+        const maxW = getMaxDamage(weapon.damage);
+        const maxDB = attacker.db !== '0' ? getMaxDamage(attacker.db) : 0;
+        if (weapon.impale) {
+            const extra = rollDice(weapon.damage);
+            total = maxW + maxDB + extra.total;
+            log = `${maxW}(最大)+${maxDB}(DB)+${extra.total}(贯穿)`;
+        } else {
+            total = maxW + maxDB;
+            log = `${maxW}(最大)+${maxDB}(DB)`;
+        }
+    }
+    return { total: Math.max(0, total), damageLog: log };
+};
+
+// ... (KEEPING DICE LOGIC UNCHANGED) ...
+const rollBasicDice = () => {
+    const units = Math.floor(Math.random() * 10);
+    const tens = Math.floor(Math.random() * 10) * 10; 
+    const result = (tens + units) || 100;
+    return { units, tens, result };
+};
+
+const rollExtraTens = () => Math.floor(Math.random() * 10) * 10;
+
+const calculateFinalResult = (units, tens1, tens2, modifier) => {
+    const roll1 = (tens1 + units) || 100;
+    const roll2 = (tens2 + units) || 100;
+    
+    if (modifier === 'bonus') {
+        return roll1 < roll2 
+            ? { finalResult: roll1, chosenTens: tens1, discardedTens: tens2 }
+            : { finalResult: roll2, chosenTens: tens2, discardedTens: tens1 };
+    } else if (modifier === 'penalty') {
+        return roll1 > roll2 
+            ? { finalResult: roll1, chosenTens: tens1, discardedTens: tens2 }
+            : { finalResult: roll2, chosenTens: tens2, discardedTens: tens1 };
+    }
+    return { finalResult: roll1, chosenTens: tens1, discardedTens: null };
+};
+
+const rollWithModifier = (modifier) => {
+    const units = Math.floor(Math.random() * 10);
+    const tens1 = Math.floor(Math.random() * 10) * 10;
+    const tens2 = Math.floor(Math.random() * 10) * 10;
+    const roll1 = tens1 + units || 100;
+    const roll2 = tens2 + units || 100;
+    
+    if (modifier === 'bonus') {
+        const result = Math.min(roll1, roll2);
+        return { result, roll1, roll2, type: 'bonus' };
+    } else if (modifier === 'penalty') {
+        const result = Math.max(roll1, roll2);
+        return { result, roll1, roll2, type: 'penalty' };
+    } else {
+        return { result: roll1, roll1, roll2: null, type: 'normal' };
+    }
+};
+
+const generateId = () => Math.random().toString(36).substr(2, 9);
+
+// =====================================================
+// CustomNumPad (UI Update: Cleaner look)
+// =====================================================
+function CustomNumPad({ isOpen, value, onChange, onConfirm, onClose, label, quickActions }) {
+    if (!isOpen) return null;
+    
+    const handleKey = (key) => {
+        if (key === 'back') onChange(value.slice(0, -1));
+        else if (key === 'clear') onChange('');
+        else onChange(value + key);
+    };
+
+    const stopProp = (e) => e.stopPropagation();
+
+    return (
+        <div className="numpad-overlay" onClick={onClose}>
+            <div className="numpad-container" onClick={stopProp}>
+                {label && <div className="text-center text-xs font-bold uppercase mb-2 text-gray-500">{label}</div>}
+                <div className="numpad-display">{value || '0'}</div>
+                <div className="numpad-grid">
+                    {['7','8','9','4','5','6','1','2','3','C','0','✓'].map(k => (
+                        <button 
+                            key={k} 
+                            className={`numpad-btn ${k === '✓' ? 'confirm' : ''}`}
+                            onClick={() => {
+                                if (k === '✓') onConfirm();
+                                else if (k === 'C') handleKey('clear');
+                                else handleKey(k);
+                            }}
+                        >
+                            {k === 'C' ? '←' : k}
+                        </button>
+                    ))}
+                </div>
+                {quickActions && quickActions.length > 0 && (
+                    <div className="flex gap-2 mt-4">
+                        {quickActions.map((action, i) => (
+                            <button key={i} onClick={action.action} className="flex-1 py-2 text-sm font-bold border border-black hover:bg-black hover:text-white transition-colors">{action.label}</button>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// =====================================================
+// SmartInput (UNCHANGED LOGIC)
+// =====================================================
+function SmartInput({ type = 'number', value, onChange, label, readonly = false, placeholder }) {
+    const [numPadOpen, setNumPadOpen] = useState(false);
+    const [tempValue, setTempValue] = useState(String(value ?? ''));
+    
+    useEffect(() => { setTempValue(String(value ?? '')); }, [value]);
+
+    if (type === 'text') {
+        return (
+            <div className="smart-input-container">
+                {label && <div className="smart-input-label">{label}</div>}
+                <input 
+                    type="text" 
+                    value={value || ''} 
+                    onChange={e => onChange(e.target.value)}
+                    placeholder={placeholder}
+                    className="smart-input-value"
+                    style={{ cursor: 'text' }}
+                />
+            </div>
+        );
+    }
+
+    return (
+        <div className="smart-input-container">
+            {label && <div className="smart-input-label">{label}</div>}
+            <div 
+                className={`smart-input-value ${readonly ? 'readonly' : ''}`}
+                onClick={() => {
+                    if (!readonly) {
+                        setTempValue(String(value ?? ''));
+                        setNumPadOpen(true);
+                    }
+                }}
+            >
+                {value ?? '-'}
+            </div>
+            {!readonly && (
+                <CustomNumPad 
+                    isOpen={numPadOpen}
+                    value={tempValue}
+                    onChange={setTempValue}
+                    onConfirm={() => { onChange(parseInt(tempValue) || 0); setNumPadOpen(false); }}
+                    onClose={() => setNumPadOpen(false)}
+                    label={label}
+                    quickActions={[
+                        { label: '+5', action: () => setTempValue(String((parseInt(tempValue)||0)+5)) },
+                        { label: '-5', action: () => setTempValue(String(Math.max(0,(parseInt(tempValue)||0)-5))) },
+                        { label: '+10', action: () => setTempValue(String((parseInt(tempValue)||0)+10)) },
+                    ]}
+                />
+            )}
+        </div>
+    );
+}
+
+// =====================================================
+// StatusGrid (UI Update: Chinese Labels)
+// =====================================================
+function StatusGrid({ status, onChange }) {
+    const statuses = [
+        { key: 'majorWound', label: '重伤 Major', type: 'danger' },
+        { key: 'dying', label: '濒死 Dying', type: 'danger' },
+        { key: 'unconscious', label: '昏迷 Uncon', type: 'dark' },
+        { key: 'prone', label: '倒地 Prone', type: 'dark' },
+    ];
+
+    return (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {statuses.map(s => (
+                <button
+                    key={s.key}
+                    className={`status-btn ${status[s.key] ? (s.type === 'danger' ? 'active-danger' : 'active-dark') : ''}`}
+                    onClick={() => onChange({ ...status, [s.key]: !status[s.key] })}
+                >
+                    {s.label}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+// =====================================================
+// DiceModifierSelector (UI Update: Clearer Icons)
+// =====================================================
+function DiceModifierSelector({ value, onChange }) {
+    return (
+        <div className="flex border border-black mb-4">
+            <button 
+                className={`flex-1 py-3 text-xs font-bold text-center transition-colors ${value === 'bonus' ? 'bg-black text-white' : 'hover:bg-gray-100'}`}
+                onClick={() => onChange('bonus')}
+            >
+                🎁 奖励骰 BONUS
+            </button>
+            <button 
+                className={`flex-1 py-3 text-xs font-bold text-center border-l border-r border-black transition-colors ${value === 'normal' ? 'bg-black text-white' : 'hover:bg-gray-100'}`}
+                onClick={() => onChange('normal')}
+            >
+                🎲 标准 NORMAL
+            </button>
+            <button 
+                className={`flex-1 py-3 text-xs font-bold text-center transition-colors ${value === 'penalty' ? 'bg-black text-white' : 'hover:bg-gray-100'}`}
+                onClick={() => onChange('penalty')}
+            >
+                💀 惩罚骰 PENALTY
+            </button>
+        </div>
+    );
+}
+
+// =====================================================
+// StepDiceRoller (UNCHANGED LOGIC)
+// =====================================================
+function StepDiceRoller({ isOpen, modifier, targetNumber, onComplete, onClose }) {
+    const [step, setStep] = useState(0);
+    const [units, setUnits] = useState(null);
+    const [tens1, setTens1] = useState(null);
+    const [tens2, setTens2] = useState(null);
+    const [finalResult, setFinalResult] = useState(null);
+    const [isRolling, setIsRolling] = useState(false);
+
+    useEffect(() => {
+        if (isOpen) {
+            setStep(0); setUnits(null); setTens1(null); setTens2(null); setFinalResult(null); setIsRolling(false);
+        }
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+
+    const startRoll = () => {
+        setStep(1); setIsRolling(true);
+        let rollCount = 0;
+        const rollInterval = setInterval(() => {
+            setUnits(Math.floor(Math.random() * 10));
+            setTens1(Math.floor(Math.random() * 10) * 10);
+            rollCount++;
+            if (rollCount >= 10) {
+                clearInterval(rollInterval);
+                setUnits(Math.floor(Math.random() * 10));
+                setTens1(Math.floor(Math.random() * 10) * 10);
+                setIsRolling(false); setStep(2);
+            }
+        }, 80);
+    };
+
+    const rollExtraDice = () => {
+        setStep(3); setIsRolling(true);
+        let rollCount = 0;
+        const rollInterval = setInterval(() => {
+            setTens2(Math.floor(Math.random() * 10) * 10);
+            rollCount++;
+            if (rollCount >= 10) {
+                clearInterval(rollInterval);
+                const finalTens2 = Math.floor(Math.random() * 10) * 10;
+                setTens2(finalTens2); setIsRolling(false);
+                const result = calculateFinalResult(units, tens1, finalTens2, modifier);
+                setFinalResult(result.finalResult); setStep(4);
+            }
+        }, 80);
+    };
+
+    const confirmResult = () => {
+        onComplete(modifier === 'normal' ? ((tens1 + units) || 100) : finalResult);
+        onClose();
+    };
+
+    const basicResult = (tens1 !== null && units !== null) ? ((tens1 + units) || 100) : null;
+    const modifierLabel = modifier === 'bonus' ? '🎁 奖励骰 BONUS' : modifier === 'penalty' ? '💀 惩罚骰 PENALTY' : '🎲 标准骰 NORMAL';
+    const getResultClass = (roll) => (roll === null || targetNumber === null) ? '' : (roll <= targetNumber ? 'success' : 'fail');
+
+    return (
+        <div className="step-dice-overlay fixed inset-0 z-[10000] flex items-center justify-center flex-col" onClick={(e) => { if (step === 0) onClose(); }}>
+            <div className="step-dice-container bg-black border-2 border-white p-6 w-[90%] max-w-[400px] text-center" onClick={e => e.stopPropagation()}>
+                <div className="text-white text-xs font-bold uppercase tracking-widest mb-4">{modifierLabel}</div>
+                
+                {step === 0 && (
+                    <>
+                        <div className="flex justify-center gap-3 my-5">
+                            <div className="dice-block w-16 h-16 bg-white text-black text-3xl font-mono flex items-center justify-center font-bold">?</div>
+                            <div className="dice-block w-16 h-16 bg-white text-black text-3xl font-mono flex items-center justify-center font-bold">?</div>
+                        </div>
+                        {targetNumber && <div className="text-gray-400 text-xs mb-4">目标值 Target: <span className="text-white font-bold">{targetNumber}</span></div>}
+                        <button className="step-dice-btn w-full bg-white text-black font-bold py-3 hover:bg-gray-200" onClick={startRoll}>🎲 投掷 ROLL</button>
+                    </>
+                )}
+
+                {step === 1 && (
+                    <>
+                        <div className="flex justify-center gap-3 my-5">
+                            <div className={`dice-block w-16 h-16 bg-white text-black text-3xl font-mono flex items-center justify-center font-bold ${isRolling ? 'animate-pulse' : ''}`}>{tens1 !== null ? String(tens1 / 10) : '?'}</div>
+                            <div className={`dice-block w-16 h-16 bg-white text-black text-3xl font-mono flex items-center justify-center font-bold ${isRolling ? 'animate-pulse' : ''}`}>{units !== null ? units : '?'}</div>
+                        </div>
+                        <div className="text-white text-sm">Rolling...</div>
+                    </>
+                )}
+
+                {step === 2 && (
+                    <>
+                        <div className="flex justify-center gap-3 my-5">
+                            <div className="dice-block w-16 h-16 bg-white text-black text-3xl font-mono flex items-center justify-center font-bold">{String(tens1 / 10)}</div>
+                            <div className="dice-block w-16 h-16 bg-white text-black text-3xl font-mono flex items-center justify-center font-bold">{units}</div>
+                        </div>
+                        <div className={`text-5xl font-mono font-bold text-white p-3 border-2 mb-4 ${basicResult <= targetNumber ? 'border-green-500 bg-green-900/50' : 'border-red-500 bg-red-900/50'}`}>{basicResult}</div>
+                        {targetNumber && <div className="text-gray-400 text-xs mb-4">{basicResult <= targetNumber ? '✓ 成功 SUCCESS' : '✗ 失败 FAIL'} (≤{targetNumber})</div>}
+                        {modifier === 'normal' ? (
+                            <button className="step-dice-btn w-full bg-white text-black font-bold py-3" onClick={confirmResult}>CONFIRM</button>
+                        ) : (
+                            <button className="step-dice-btn w-full bg-white text-black font-bold py-3" onClick={rollExtraDice}>🎲 EXTRA TENS</button>
+                        )}
+                    </>
+                )}
+
+                {step === 3 && (
+                    <div className="text-white">Rolling Extra Tens...</div>
+                )}
+
+                {step === 4 && (
+                    <>
+                         <div className="flex justify-center gap-3 my-5">
+                            {(() => {
+                                const result1 = (tens1 + units) || 100;
+                                const result2 = (tens2 + units) || 100;
+                                const isFirstChosen = (modifier === 'bonus' && result1 <= result2) || (modifier === 'penalty' && result1 >= result2);
+                                return (
+                                    <>
+                                        <div className={`dice-block w-16 h-16 text-3xl font-mono flex items-center justify-center font-bold ${isFirstChosen ? 'bg-green-500 text-white' : 'bg-red-500 text-white opacity-50'}`}>{String(tens1 / 10)}</div>
+                                        <div className="dice-block w-16 h-16 bg-white text-black text-3xl font-mono flex items-center justify-center font-bold">{units}</div>
+                                        <div className="text-white self-center text-xl">vs</div>
+                                        <div className={`dice-block w-16 h-16 text-3xl font-mono flex items-center justify-center font-bold ${!isFirstChosen ? 'bg-green-500 text-white' : 'bg-red-500 text-white opacity-50'}`}>{String(tens2 / 10)}</div>
+                                        <div className="dice-block w-16 h-16 bg-white text-black text-3xl font-mono flex items-center justify-center font-bold">{units}</div>
+                                    </>
+                                );
+                            })()}
+                        </div>
+                        <div className={`text-5xl font-mono font-bold text-white p-3 border-2 mb-4 ${finalResult <= targetNumber ? 'border-green-500 bg-green-900/50' : 'border-red-500 bg-red-900/50'}`}>{finalResult}</div>
+                        <button className="step-dice-btn w-full bg-white text-black font-bold py-3" onClick={confirmResult}>CONFIRM</button>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// =====================================================
+// App 主组件
+// =====================================================
+function App() {
+    const [view, setView] = useState('setup');
+    const [characters, setCharacters] = useState([]);
+    const [logs, setLogs] = useState([]);
+    const [turn, setTurn] = useState({ round: 1, index: 0 });
+    const [history, setHistory] = useState([]);
+    const [kpPanelOpen, setKpPanelOpen] = useState(false);
+    const logContainerRef = useRef(null);
+
+    useEffect(() => {
+        if (logContainerRef.current) logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }, [logs]);
+
+    const saveToHistory = () => {
+        setHistory(prev => [...prev.slice(-19), {
+            characters: JSON.parse(JSON.stringify(characters)),
+            turn: { ...turn },
+            logs: [...logs]
+        }]);
+    };
+
+    const undo = () => {
+        if (history.length === 0) return;
+        const last = history[history.length - 1];
+        setCharacters(last.characters); setTurn(last.turn); setLogs(last.logs);
+        setHistory(prev => prev.slice(0, -1));
+    };
+
+    const addLog = (text, type = 'info') => {
+        setLogs(prev => [...prev, { id: Date.now(), text, type, time: new Date().toLocaleTimeString().slice(0, 8) }]);
+    };
+
+    const combatOrder = useMemo(() => [...characters].sort((a, b) => {
+        const aDex = a.hasGunReady ? a.dex + 50 : a.dex;
+        const bDex = b.hasGunReady ? b.dex + 50 : b.dex;
+        return bDex !== aDex ? bDex - aDex : b.fight - a.fight;
+    }), [characters]);
+
+    const currentActor = useMemo(() => combatOrder[turn.index % combatOrder.length], [combatOrder, turn.index]);
+
+    const updateChar = (id, updates) => {
+        setCharacters(prev => prev.map(c => {
+            if (c.id !== id) return c;
+            const updated = { ...c, ...updates };
+            const derived = calcDerived(updated);
+            return { ...updated, ...derived, hp: Math.min(updated.hp ?? derived.maxHp, derived.maxHp) };
+        }));
+    };
+
+    const startNewRound = () => {
+        setCharacters(prev => prev.map(c => ({ ...c, status: { ...c.status, defenseUsedThisRound: false } })));
+    };
+
+    return (
+        <div className="main-layout font-sans bg-gray-50">
+            <header className="h-14 border-b border-gray-300 flex items-center justify-between px-4 bg-white shrink-0 z-30 relative shadow-sm">
+                <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-black flex items-center justify-center text-white font-bold text-sm rounded-sm">C7</div>
+                    <div className="flex flex-col">
+                        <h1 className="font-bold text-sm leading-none text-gray-900">COC7 战斗控制台</h1>
+                        <span className="text-[10px] text-gray-500 uppercase tracking-wide">Combat Console v3.3</span>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2">
+                    {view === 'setup' && (
+                        <button onClick={() => { if(characters.length<1) return alert("至少添加一个角色"); setView('combat'); addLog("🏁 战斗开始 COMBAT START", "system"); }} className="bg-black text-white px-4 py-2 text-xs font-bold uppercase tracking-wide hover:bg-gray-800 transition-colors">⚔️ 开始战斗 START</button>
+                    )}
+                    {view === 'combat' && (
+                        <>
+                            <span className="font-mono text-xs bg-gray-100 text-black border border-gray-300 px-3 py-1 font-bold">ROUND {turn.round}</span>
+                            <button onClick={() => setKpPanelOpen(!kpPanelOpen)} className={`font-bold text-xs px-3 py-1 border transition-colors ${kpPanelOpen ? 'bg-red-600 text-white border-red-600' : 'border-black hover:bg-black hover:text-white'}`}>👑 KP面板</button>
+                            <button onClick={undo} disabled={history.length === 0} className="font-bold text-xs px-3 py-1 border border-black disabled:opacity-30 hover:bg-gray-100">↩ 撤销</button>
+                            <button onClick={() => setView('setup')} className="text-xs font-bold text-gray-500 hover:text-black ml-2 underline">设置 SETUP</button>
+                        </>
+                    )}
+                </div>
+            </header>
+
+            <main className="flex-1 overflow-hidden relative">
+                {view === 'setup' ? (
+                    <SetupModule characters={characters} setCharacters={setCharacters} updateChar={updateChar} />
+                ) : (
+                    <CombatModule 
+                        characters={characters} 
+                        combatOrder={combatOrder}
+                        updateChar={updateChar}
+                        turn={turn} 
+                        setTurn={setTurn}
+                        logs={logs}
+                        addLog={addLog}
+                        currentActor={currentActor}
+                        startNewRound={startNewRound}
+                        saveToHistory={saveToHistory}
+                        logContainerRef={logContainerRef}
+                    />
+                )}
+                
+                <KPControlPanel 
+                    isOpen={kpPanelOpen} 
+                    onClose={() => setKpPanelOpen(false)}
+                    characters={characters}
+                    updateChar={updateChar}
+                    addLog={addLog}
+                    currentActor={currentActor}
+                />
+            </main>
+        </div>
+    );
+}
+
+// ... (KPControlPanel logic kept largely the same, mostly Label updates) ...
+function KPControlPanel({ isOpen, onClose, characters, updateChar, addLog, currentActor }) {
+    const [selectedCharId, setSelectedCharId] = useState('');
+    const [editMode, setEditMode] = useState('stats');
+    const [customWeaponName, setCustomWeaponName] = useState('');
+    const [customWeaponDamage, setCustomWeaponDamage] = useState('1D6');
+    const [customWeaponType, setCustomWeaponType] = useState('melee');
+    const [customWeaponImpale, setCustomWeaponImpale] = useState(false);
+    const [customWeaponRange, setCustomWeaponRange] = useState(10);
+
+    const selectedChar = characters.find(c => c.id === selectedCharId) || currentActor;
+
+    useEffect(() => {
+        if (isOpen && !selectedCharId && currentActor) setSelectedCharId(currentActor.id);
+    }, [isOpen, currentActor, selectedCharId]);
+
+    const addCustomWeapon = () => {
+        if (!selectedChar || !customWeaponName.trim()) return;
+        const newWeapon = {
+            id: generateId(), name: customWeaponName.trim(), damage: customWeaponDamage,
+            type: customWeaponType, impale: customWeaponImpale,
+            range: customWeaponType === 'ranged' ? customWeaponRange : 1,
+            ammo: customWeaponType === 'ranged' ? 10 : undefined, maxAmmo: customWeaponType === 'ranged' ? 10 : undefined, malfunction: 100,
+        };
+        if (customWeaponType === 'melee') updateChar(selectedChar.id, { meleeWeapon: newWeapon });
+        else updateChar(selectedChar.id, { rangedWeapon: newWeapon });
+        addLog(`👑 KP为${selectedChar.name}添加武器: ${newWeapon.name}`, 'system');
+        setCustomWeaponName('');
+    };
+
+    const quickActions = {
+        heal: (amount) => {
+            if (selectedChar) {
+                const newHp = Math.min(selectedChar.maxHp, selectedChar.hp + amount);
+                updateChar(selectedChar.id, { hp: newHp });
+                addLog(`👑 +${amount}HP → ${selectedChar.name}`, 'system');
+            }
+        },
+        damage: (amount) => {
+            if (selectedChar) {
+                const newHp = Math.max(0, selectedChar.hp - amount);
+                updateChar(selectedChar.id, { hp: newHp });
+                addLog(`👑 -${amount}HP → ${selectedChar.name}`, 'damage');
+            }
+        },
+    };
+
+    return (
+        <div className={`kp-panel ${isOpen ? 'open' : ''}`}>
+            <div className="p-4 bg-red-600 text-white flex justify-between items-center shadow-md">
+                <h2 className="font-bold uppercase tracking-wide text-sm">👑 KP 控制台</h2>
+                <button onClick={onClose} className="text-xl leading-none opacity-80 hover:opacity-100">×</button>
+            </div>
+
+            <div className="p-5">
+                <div className="mb-6">
+                    <div className="label mb-2">选择角色 Select Character</div>
+                    <select 
+                        value={selectedCharId} 
+                        onChange={(e) => setSelectedCharId(e.target.value)}
+                        className="w-full border border-gray-300 px-3 py-2 text-sm font-bold focus:border-black focus:outline-none"
+                    >
+                        {characters.map(c => (
+                            <option key={c.id} value={c.id}>{c.name} ({c.type === 'player' ? 'PC' : 'NPC'})</option>
+                        ))}
+                    </select>
+                </div>
+
+                {selectedChar && (
+                    <>
+                        <div className="flex border-b border-gray-200 mb-6">
+                            {['stats', 'weapons'].map(mode => (
+                                <button
+                                    key={mode}
+                                    onClick={() => setEditMode(mode)}
+                                    className={`flex-1 py-2 text-xs font-bold uppercase transition-colors ${editMode === mode ? 'border-b-2 border-black text-black' : 'text-gray-400 hover:text-gray-600'}`}
+                                >
+                                    {mode === 'stats' ? '属性 Stats' : '武器 Weapons'}
+                                </button>
+                            ))}
+                        </div>
+
+                        {editMode === 'stats' && (
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-4 gap-2">
+                                    <button onClick={() => quickActions.heal(1)} className="p-2 border border-gray-300 hover:border-black text-xs font-bold">+1 HP</button>
+                                    <button onClick={() => quickActions.heal(5)} className="p-2 border border-gray-300 hover:border-black text-xs font-bold">+5 HP</button>
+                                    <button onClick={() => quickActions.damage(5)} className="p-2 border border-red-200 bg-red-50 text-red-700 text-xs font-bold hover:bg-red-100">-5 HP</button>
+                                    <button onClick={() => quickActions.damage(10)} className="p-2 border border-red-200 bg-red-50 text-red-700 text-xs font-bold hover:bg-red-100">-10 HP</button>
+                                </div>
+                                
+                                <div>
+                                    <div className="label mb-2">状态 Status</div>
+                                    <StatusGrid status={selectedChar.status} onChange={(status) => updateChar(selectedChar.id, { status })} />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <SmartInput label="HP 当前生命" value={selectedChar.hp} onChange={(val) => updateChar(selectedChar.id, { hp: val })} />
+                                    <SmartInput label="MAX HP 最大生命" value={selectedChar.maxHp} onChange={(val) => updateChar(selectedChar.id, { maxHp: val })} />
+                                </div>
+                                
+                                <div className="grid grid-cols-3 gap-3">
+                                    <SmartInput label="STR 力量" value={selectedChar.str} onChange={(val) => updateChar(selectedChar.id, { str: val })} />
+                                    <SmartInput label="CON 体质" value={selectedChar.con} onChange={(val) => updateChar(selectedChar.id, { con: val })} />
+                                    <SmartInput label="SIZ 体型" value={selectedChar.siz} onChange={(val) => updateChar(selectedChar.id, { siz: val })} />
+                                    <SmartInput label="DEX 敏捷" value={selectedChar.dex} onChange={(val) => updateChar(selectedChar.id, { dex: val })} />
+                                    <SmartInput label="APP 外貌" value={selectedChar.app || 50} onChange={(val) => updateChar(selectedChar.id, { app: val })} />
+                                    <SmartInput label="POW 意志" value={selectedChar.pow || 50} onChange={(val) => updateChar(selectedChar.id, { pow: val })} />
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-3 border-t border-dashed border-gray-300 pt-4">
+                                    <SmartInput label="急救 First Aid" value={selectedChar.firstAid || 30} onChange={(val) => updateChar(selectedChar.id, { firstAid: val })} />
+                                    <SmartInput label="医学 Medicine" value={selectedChar.medicine || 5} onChange={(val) => updateChar(selectedChar.id, { medicine: val })} />
+                                </div>
+                            </div>
+                        )}
+
+                        {editMode === 'weapons' && (
+                           // ... Simplified Weapon View ...
+                           <div className="space-y-6">
+                                {/* Presets */}
+                                <div>
+                                    <div className="label mb-2">预设武器 Weapon Presets</div>
+                                    <select 
+                                        onChange={(e) => {
+                                            const w = WEAPON_PRESETS.find(w => w.name === e.target.value);
+                                            if (w) {
+                                                if (w.type === 'melee') updateChar(selectedChar.id, { meleeWeapon: {...w} });
+                                                else updateChar(selectedChar.id, { rangedWeapon: {...w} });
+                                                addLog(`👑 ${selectedChar.name} → ${w.name}`, 'system');
+                                                e.target.value = '';
+                                            }
+                                        }}
+                                        className="w-full border border-gray-300 p-2 text-sm"
+                                    >
+                                        <option value="">-- 选择预设 --</option>
+                                        <optgroup label="近战 MELEE">{MELEE_WEAPONS.map(w => <option key={w.name} value={w.name}>{w.name}</option>)}</optgroup>
+                                        <optgroup label="射击 RANGED">{RANGED_WEAPONS.map(w => <option key={w.name} value={w.name}>{w.name}</option>)}</optgroup>
+                                    </select>
+                                </div>
+                                {/* Custom Weapon Form simplified */}
+                                <div className="border-t border-dashed border-gray-300 pt-4">
+                                     <div className="label mb-2">添加自定义武器 Custom Weapon</div>
+                                     <div className="space-y-2">
+                                        <input type="text" placeholder="名称 Name" value={customWeaponName} onChange={e => setCustomWeaponName(e.target.value)} className="w-full border border-gray-300 p-2 text-sm" />
+                                        <input type="text" placeholder="伤害 Damage (e.g. 1D6)" value={customWeaponDamage} onChange={e => setCustomWeaponDamage(e.target.value)} className="w-full border border-gray-300 p-2 text-sm font-mono" />
+                                        <div className="flex gap-2">
+                                            <select value={customWeaponType} onChange={e => setCustomWeaponType(e.target.value)} className="flex-1 border border-gray-300 p-2 text-sm">
+                                                <option value="melee">近战 Melee</option>
+                                                <option value="ranged">射击 Ranged</option>
+                                            </select>
+                                            <button onClick={addCustomWeapon} className="bg-black text-white px-4 text-xs font-bold uppercase">ADD</button>
+                                        </div>
+                                     </div>
+                                </div>
+                           </div>
+                        )}
+                    </>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// =====================================================
+// SetupModule (UI Update: Bilingual)
+// =====================================================
+function SetupModule({ characters, setCharacters, updateChar }) {
+    const [selectedId, setSelectedId] = useState(null);
+    const [isImporting, setIsImporting] = useState(false);
+    const [importText, setImportText] = useState('');
+    
+    const activeChar = characters.find(c => c.id === selectedId);
+
+    const addCharacter = (type) => {
+        const newChar = { 
+            ...JSON.parse(JSON.stringify(BASE_CHARACTER)), 
+            id: generateId(), 
+            type, 
+            name: type === 'player' ? '新调查员' : '新敌人',
+        };
+        const derived = calcDerived(newChar);
+        setCharacters(p => [...p, { ...newChar, ...derived, hp: derived.maxHp }]);
+        setSelectedId(newChar.id);
+    };
+
+    const handleImport = () => {
+        if (!importText) return;
+        const lines = importText.split('\n');
+        const newChar = { ...JSON.parse(JSON.stringify(BASE_CHARACTER)), id: generateId(), type: 'player', name: '导入角色' };
+        lines.forEach(line => {
+            if (line.includes('力量')) newChar.str = parseInt(line.match(/\d+/)?.[0] || 50);
+            if (line.includes('体质')) newChar.con = parseInt(line.match(/\d+/)?.[0] || 50);
+            if (line.includes('体型')) newChar.siz = parseInt(line.match(/\d+/)?.[0] || 60);
+            if (line.includes('敏捷')) newChar.dex = parseInt(line.match(/\d+/)?.[0] || 50);
+            if (line.includes('斗殴') || line.includes('格斗')) newChar.fight = parseInt(line.match(/\d+/)?.[0] || 50);
+            if (line.includes('射击')) newChar.firearms = parseInt(line.match(/\d+/)?.[0] || 20);
+            if (line.includes('闪避')) newChar.dodge = parseInt(line.match(/\d+/)?.[0] || 25);
+        });
+        const derived = calcDerived(newChar);
+        setCharacters(p => [...p, { ...newChar, ...derived, hp: derived.maxHp }]);
+        setSelectedId(newChar.id);
+        setImportText('');
+        setIsImporting(false);
+    };
+
+    return (
+        <div className="setup-grid h-full">
+            <div className="setup-sidebar panel-scroll">
+                <div className="p-4 space-y-6">
+                    <div className="text-xl font-bold mb-4">角色管理 <span className="text-gray-400 text-sm font-normal">Setup</span></div>
+                    
+                    {isImporting ? (
+                        <div className="p-3 bg-white border border-black shadow-sm">
+                            <textarea className="w-full h-24 text-xs font-mono border border-gray-300 p-2 mb-2 focus:border-black focus:outline-none" placeholder="粘贴 .st 文本 (例如: 力量50 体质60...)" value={importText} onChange={e => setImportText(e.target.value)} />
+                            <div className="flex gap-2">
+                                <button onClick={handleImport} className="flex-1 bg-black text-white text-xs py-2 font-bold">导入 Import</button>
+                                <button onClick={() => setIsImporting(false)} className="flex-1 border border-black text-xs py-2">取消</button>
+                            </div>
+                        </div>
+                    ) : (
+                        <button onClick={() => setIsImporting(true)} className="w-full py-3 border border-dashed border-gray-400 text-xs font-bold text-gray-500 uppercase hover:border-black hover:text-black transition-colors">📥 导入文本 Import Text</button>
+                    )}
+                    
+                    <div>
+                        <div className="flex justify-between items-center mb-3">
+                            <span className="label text-blue-600">调查员 PLAYERS</span>
+                            <button onClick={() => addCharacter('player')} className="text-xs font-bold w-6 h-6 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-colors">+</button>
+                        </div>
+                        <div className="space-y-1">
+                            {characters.filter(c => c.type === 'player').map(c => (
+                                <div 
+                                    key={c.id} 
+                                    onClick={() => setSelectedId(c.id)} 
+                                    className={`char-card faction-strip-player flex items-center justify-between px-3 py-3 text-sm ${selectedId === c.id ? 'selected' : ''}`}
+                                >
+                                    <span className="font-bold truncate">{c.name}</span>
+                                    <button onClick={(e) => { e.stopPropagation(); if(confirm('确认删除?')) setCharacters(p => p.filter(x => x.id !== c.id)); if(selectedId === c.id) setSelectedId(null); }} className="text-gray-400 hover:text-red-600 px-2">×</button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <div className="flex justify-between items-center mb-3">
+                            <span className="label text-red-600">敌人 ENEMIES</span>
+                            <button onClick={() => addCharacter('enemy')} className="text-xs font-bold w-6 h-6 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-colors">+</button>
+                        </div>
+                        <div className="space-y-1">
+                            {characters.filter(c => c.type === 'enemy').map(c => (
+                                <div 
+                                    key={c.id} 
+                                    onClick={() => setSelectedId(c.id)} 
+                                    className={`char-card faction-strip-enemy flex items-center justify-between px-3 py-3 text-sm ${selectedId === c.id ? 'selected' : ''}`}
+                                >
+                                    <span className="font-bold truncate">{c.name}</span>
+                                    <button onClick={(e) => { e.stopPropagation(); if(confirm('确认删除?')) setCharacters(p => p.filter(x => x.id !== c.id)); if(selectedId === c.id) setSelectedId(null); }} className="text-gray-400 hover:text-red-600 px-2">×</button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div className="setup-content panel-scroll">
+                {activeChar ? <CharacterSheet char={activeChar} updateChar={updateChar} /> : (
+                    <div className="h-full flex items-center justify-center text-gray-300">
+                        <div className="text-center">
+                            <div className="text-5xl mb-4">📋</div>
+                            <p className="text-sm font-bold uppercase tracking-widest">Select Character to Edit</p>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// =====================================================
+// CharacterSheet (UI Update: Bilingual & Grouping)
+// =====================================================
+function CharacterSheet({ char, updateChar }) {
+    return (
+        <div className="max-w-3xl mx-auto p-8">
+            <div className="mb-8 flex gap-6 items-end">
+                <div className="flex-1">
+                    <SmartInput 
+                        type="text" 
+                        label="角色名称 NAME" 
+                        value={char.name} 
+                        onChange={(val) => updateChar(char.id, { name: val })} 
+                    />
+                </div>
+                <div className="w-32">
+                    <div className="label mb-1">类型 TYPE</div>
+                    <select value={char.type} onChange={e => updateChar(char.id, { type: e.target.value })} className="w-full py-2 border border-gray-300 text-sm font-bold uppercase focus:border-black">
+                        <option value="player">调查员 PC</option>
+                        <option value="enemy">敌人 NPC</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+                <SmartInput label="STR 力量" value={char.str} onChange={(val) => updateChar(char.id, { str: val })} />
+                <SmartInput label="CON 体质" value={char.con} onChange={(val) => updateChar(char.id, { con: val })} />
+                <SmartInput label="SIZ 体型" value={char.siz} onChange={(val) => updateChar(char.id, { siz: val })} />
+                <SmartInput label="DEX 敏捷" value={char.dex} onChange={(val) => updateChar(char.id, { dex: val })} />
+            </div>
+
+            <div className="bg-gray-50 p-4 border border-gray-200 mb-8">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <SmartInput label="MAX HP 最大生命" value={char.maxHp} readonly />
+                    <div className="smart-input-container">
+                        <div className="smart-input-label">DB 伤害加值</div>
+                        <div className="smart-input-value readonly">{char.db}</div>
+                    </div>
+                    <SmartInput label="BUILD 体格" value={char.build} readonly />
+                    <SmartInput label="MOV 移动力" value={char.mov} readonly />
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                <div>
+                    <div className="label mb-3 border-b border-black pb-1">战斗技能 Combat Skills</div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <SmartInput label="斗殴 (Brawl)" value={char.fight} onChange={(val) => updateChar(char.id, { fight: val })} />
+                        <SmartInput label="闪避 (Dodge)" value={char.dodge} onChange={(val) => updateChar(char.id, { dodge: val })} />
+                        <SmartInput label="射击 (Firearms)" value={char.firearms} onChange={(val) => updateChar(char.id, { firearms: val })} />
+                        <SmartInput label="护甲 (Armor)" value={char.armorValue || 0} onChange={(val) => updateChar(char.id, { armorValue: val })} />
+                    </div>
+                </div>
+                <div>
+                    <div className="label mb-3 border-b border-black pb-1">医疗技能 Medical Skills</div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <SmartInput label="急救 (First Aid)" value={char.firstAid || 30} onChange={(val) => updateChar(char.id, { firstAid: val })} />
+                        <SmartInput label="医学 (Medicine)" value={char.medicine || 5} onChange={(val) => updateChar(char.id, { medicine: val })} />
+                    </div>
+                </div>
+            </div>
+            
+            <div className="mb-8">
+                 <div className="label mb-3 border-b border-black pb-1">配置 Configuration</div>
+                <label className="flex items-center gap-3 cursor-pointer p-3 border border-gray-200 hover:border-black transition-colors">
+                    <input type="checkbox" checked={char.hasGunReady || false} onChange={e => updateChar(char.id, { hasGunReady: e.target.checked })} className="w-4 h-4" />
+                    <span className="text-sm font-bold">🔫 已架枪 Gun Ready (DEX+50)</span>
+                </label>
+            </div>
+
+            <div className="mb-8">
+                <div className="label mb-3 border-b border-black pb-1">当前状态 Status</div>
+                <StatusGrid status={char.status} onChange={(status) => updateChar(char.id, { status })} />
+            </div>
+            
+            <div className="bg-gray-50 p-5 border border-gray-200">
+                <div className="label mb-4">装备武器 Weapons</div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <div className="text-xs font-bold text-blue-700 mb-2">⚔️ 近战武器 Melee</div>
+                        <select 
+                            className="w-full border border-gray-300 p-2 text-sm bg-white" 
+                            value={char.meleeWeapon?.name || '拳头'} 
+                            onChange={(e) => { 
+                                const w = MELEE_WEAPONS.find(w => w.name === e.target.value); 
+                                if (w) updateChar(char.id, { meleeWeapon: { ...w } }); 
+                            }}
+                        >
+                            {MELEE_WEAPONS.map(w => <option key={w.name} value={w.name}>{w.name} ({w.damage})</option>)}
+                        </select>
+                    </div>
+
+                    <div>
+                        <div className="text-xs font-bold text-orange-700 mb-2">🔫 远程武器 Ranged</div>
+                        <select 
+                            className="w-full border border-gray-300 p-2 text-sm bg-white" 
+                            value={char.rangedWeapon?.name || ''} 
+                            onChange={(e) => { 
+                                if (!e.target.value) {
+                                    updateChar(char.id, { rangedWeapon: null });
+                                } else {
+                                    const w = RANGED_WEAPONS.find(w => w.name === e.target.value); 
+                                    if (w) updateChar(char.id, { rangedWeapon: { ...w } }); 
+                                }
+                            }}
+                        >
+                            <option value="">无 None</option>
+                            {RANGED_WEAPONS.map(w => <option key={w.name} value={w.name}>{w.name} ({w.damage})</option>)}
+                        </select>
+                         {char.rangedWeapon && (
+                            <div className="mt-2 text-xs text-gray-500 font-mono">
+                                弹药: {char.rangedWeapon.ammo}/{char.rangedWeapon.maxAmmo} | 射程: {char.rangedWeapon.range}yd
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// =====================================================
+// CombatModule (UI Update: Better Hierarchy & Bilingual)
+// =====================================================
+function CombatModule({ characters, combatOrder, updateChar, turn, setTurn, logs, addLog, currentActor, startNewRound, saveToHistory, logContainerRef }) {
+    const [phase, setPhase] = useState('select_action');
+    const [selectedTargetId, setSelectedTargetId] = useState(null);
+    const [combatAction, setCombatAction] = useState(null);
+    const [inputValue, setInputValue] = useState('');
+    const [shootingDistance, setShootingDistance] = useState(10);
+    const [maneuverType, setManeuverType] = useState('disarm');
+    const [mobileTab, setMobileTab] = useState('action');
+    const [diceModifier, setDiceModifier] = useState('normal'); 
+    const [showMedical, setShowMedical] = useState(false); 
+    
+    const [showStepDice, setShowStepDice] = useState(false);
+    const [stepDiceCallback, setStepDiceCallback] = useState(null);
+    const [stepDiceTargetNumber, setStepDiceTargetNumber] = useState(null);
+
+    const targetActor = characters.find(c => c.id === selectedTargetId);
+
+    // ... (LOGIC UNCHANGED) ...
+    const nextTurn = () => {
+        saveToHistory();
+        const nextIndex = turn.index + 1;
+        if (nextIndex >= combatOrder.length) {
+            setTurn({ round: turn.round + 1, index: 0 });
+            startNewRound();
+            addLog(`📅 ROUND ${turn.round + 1}`, 'system');
+        } else {
+            setTurn({ ...turn, index: nextIndex });
+        }
+        setPhase('select_action'); setSelectedTargetId(null); setCombatAction(null); setInputValue(''); setDiceModifier('normal'); setShowMedical(false);
+    };
+
+    const doRollDirect = () => {
+        const result = rollWithModifier(diceModifier);
+        if (result.type === 'bonus') addLog(`🎲 奖励骰: [${result.roll1}, ${result.roll2}] → ${result.result}`, 'roll');
+        else if (result.type === 'penalty') addLog(`🎲 惩罚骰: [${result.roll1}, ${result.roll2}] → ${result.result}`, 'roll');
+        return result.result;
+    };
+
+    const openStepDiceRoller = (targetNumber, callback) => {
+        setStepDiceTargetNumber(targetNumber); setStepDiceCallback(() => callback); setShowStepDice(true);
+    };
+
+    const handleStepDiceComplete = (result) => {
+        if (diceModifier === 'bonus') addLog(`🎲 奖励骰: 最终结果 → ${result}`, 'roll');
+        else if (diceModifier === 'penalty') addLog(`🎲 惩罚骰: 最终结果 → ${result}`, 'roll');
+        else addLog(`🎲 标准骰: ${result}`, 'roll');
+        setInputValue(String(result)); setShowStepDice(false);
+        if (stepDiceCallback) stepDiceCallback(result);
+    };
+
+    const handleMeleeAttack = () => {
+        if (!targetActor) return;
+        saveToHistory();
+        const weapon = currentActor.meleeWeapon || { name: "拳头", damage: "1D3", impale: false };
+        setCombatAction({ type: 'melee', attacker: currentActor, target: targetActor, weapon, attackerSkill: currentActor.fight });
+        setPhase('waiting_defense');
+        addLog(`⚔️ ${currentActor.name} → ${targetActor.name} [${weapon.name}]`, 'system');
+    };
+
+    const handleRangedAttack = () => {
+        if (!targetActor || !currentActor.rangedWeapon) return;
+        if (currentActor.rangedWeapon.ammo <= 0) { addLog(`❌ NO AMMO!`, 'system'); return; }
+        saveToHistory();
+        const weapon = currentActor.rangedWeapon;
+        let difficulty = 'regular';
+        if (shootingDistance > weapon.range * 2) difficulty = 'extreme';
+        else if (shootingDistance > weapon.range) difficulty = 'hard';
+        setCombatAction({ type: 'ranged', attacker: currentActor, target: targetActor, weapon, distance: shootingDistance, difficulty });
+        setPhase('input_roll');
+        addLog(`🔫 ${currentActor.name} → ${targetActor.name} [${weapon.name}] ${difficulty.toUpperCase()}`, 'system');
+    };
+
+    const handleManeuver = () => {
+        if (!targetActor) return;
+        saveToHistory();
+        const buildDiff = targetActor.build - currentActor.build;
+        if (buildDiff >= 3) { addLog(`❌ BUILD差距过大(${buildDiff})，战技无效`, 'system'); return; }
+        setCombatAction({ type: 'maneuver', attacker: currentActor, target: targetActor, maneuverType, penaltyDice: Math.max(0, buildDiff), attackerSkill: currentActor.fight });
+        setPhase('waiting_defense');
+        addLog(`🤼 ${currentActor.name} → ${targetActor.name} [${maneuverType}]`, 'system');
+    };
+
+    const performFirstAid = () => {
+        if (!targetActor) return;
+        saveToHistory();
+        const roll = doRollDirect();
+        const success = calculateSuccessLevel(roll, currentActor.firstAid || 30);
+        addLog(`🩹 急救 [${roll}] vs ${currentActor.firstAid || 30} → ${getSuccessLabel(success)}`, 'roll');
+        if (success > 0) {
+            if (targetActor.status.dying) {
+                updateChar(targetActor.id, { hp: 1, status: { ...targetActor.status, dying: false } });
+                addLog(`✅ ${targetActor.name} 脱离濒死`, 'success');
+            } else {
+                const newHp = Math.min(targetActor.maxHp, targetActor.hp + 1);
+                updateChar(targetActor.id, { hp: newHp });
+                addLog(`✅ ${targetActor.name} +1 HP`, 'success');
+            }
+        }
+        nextTurn();
+    };
+
+    const performMedicine = () => {
+        if (!targetActor) return;
+        saveToHistory();
+        const roll = doRollDirect();
+        const success = calculateSuccessLevel(roll, currentActor.medicine || 5);
+        addLog(`⚕️ 医学 [${roll}] vs ${currentActor.medicine || 5} → ${getSuccessLabel(success)}`, 'roll');
+        if (success > 0) {
+            const heal = rollDice('1D3');
+            const newHp = Math.min(targetActor.maxHp, targetActor.hp + heal.total);
+            updateChar(targetActor.id, { hp: newHp });
+            addLog(`✅ ${targetActor.name} +${heal.total} HP`, 'success');
+        }
+        nextTurn();
+    };
+
+    const handleRoll = () => {
+        const roll = parseInt(inputValue);
+        if (!roll || roll < 1 || roll > 100) return;
+        if (combatAction.type === 'ranged') {
+            let skillValue = currentActor.firearms;
+            if (combatAction.difficulty === 'hard') skillValue = Math.floor(skillValue / 2);
+            if (combatAction.difficulty === 'extreme') skillValue = Math.floor(skillValue / 5);
+            const successLevel = calculateSuccessLevel(roll, skillValue);
+            const newAmmo = currentActor.rangedWeapon.ammo - 1;
+            updateChar(currentActor.id, { rangedWeapon: { ...currentActor.rangedWeapon, ammo: newAmmo } });
+            if (roll >= currentActor.rangedWeapon.malfunction) { addLog(`💥 MALFUNCTION!`, 'damage'); nextTurn(); return; }
+            if (successLevel > 0) {
+                addLog(`🎯 HIT [${roll}] ${getSuccessLabel(successLevel)}`, 'roll');
+                setCombatAction(prev => ({ ...prev, damageAttacker: currentActor, damageSuccessLevel: successLevel }));
+                setPhase('input_damage');
+            } else {
+                addLog(`💨 MISS [${roll}]`, 'roll'); nextTurn();
+            }
+        } else {
+            const successLevel = calculateSuccessLevel(roll, combatAction.attackerSkill);
+            addLog(`🎲 ATK [${roll}] ${getSuccessLabel(successLevel)}`, 'roll');
+            setCombatAction(prev => ({ ...prev, attackerRoll: roll, attackerSuccessLevel: successLevel }));
+            setPhase('input_defense_roll');
+        }
+        setInputValue('');
+    };
+
+    const handleDefenseRoll = () => {
+        const roll = parseInt(inputValue);
+        if (!roll || roll < 1 || roll > 100) return;
+        const result = executeOpposedCheck(combatAction.attackerSkill, combatAction.defenderSkill, combatAction.attackerRoll, roll, combatAction.defenseType);
+        addLog(`🎲 DEF [${roll}] ${getSuccessLabel(result.defLvl)}`, 'roll');
+        updateChar(targetActor.id, { status: { ...targetActor.status, defenseUsedThisRound: true } });
+        if (result.winner === 'attacker') {
+            if (combatAction.type === 'maneuver') {
+                addLog(`✅ ${combatAction.maneuverType} SUCCESS`, 'success');
+                if (combatAction.maneuverType === 'knockdown') updateChar(targetActor.id, { status: { ...targetActor.status, prone: true } });
+                nextTurn();
+            } else {
+                setCombatAction(prev => ({ ...prev, damageAttacker: currentActor, damageSuccessLevel: result.atkLvl, isCounterAttack: false }));
+                setPhase('input_damage');
+            }
+        } else {
+            if (combatAction.defenseType === 'counter' && result.defLvl > 0) {
+                addLog(`⚔️ ${targetActor.name} COUNTER!`, 'success');
+                setCombatAction(prev => ({ ...prev, damageAttacker: targetActor, damageSuccessLevel: result.defLvl, isCounterAttack: true, weapon: targetActor.meleeWeapon || { name: "拳头", damage: "1D3", impale: false } }));
+                setPhase('input_damage');
+            } else {
+                addLog(`💨 MISS`, 'system'); nextTurn();
+            }
+        }
+        setInputValue('');
+    };
+
+    const handleDamage = () => {
+        const damage = parseInt(inputValue) || 0;
+        const target = combatAction.isCounterAttack ? currentActor : targetActor;
+        const actualDamage = Math.max(0, damage - (target.armorValue || 0));
+        const newHp = Math.max(0, target.hp - actualDamage);
+        const isMajorWound = actualDamage >= Math.floor(target.maxHp / 2);
+        let newStatus = { ...target.status };
+        if (isMajorWound) { newStatus.majorWound = true; newStatus.prone = true; addLog(`💀 ${target.name} MAJOR WOUND!`, 'damage'); }
+        if (newHp === 0 && newStatus.majorWound) { newStatus.dying = true; addLog(`⚠️ ${target.name} DYING!`, 'damage'); }
+        if (actualDamage >= target.maxHp) { addLog(`☠️ ${target.name} DEAD!`, 'damage'); }
+        updateChar(target.id, { hp: newHp, status: newStatus });
+        addLog(`💥 ${target.name} -${actualDamage} HP (${target.hp}→${newHp})`, 'damage');
+        nextTurn();
+    };
+
+    return (
+        <div className="combat-grid h-full">
+            {/* 左侧角色列表 */}
+            <div className={`panel-left panel-scroll ${mobileTab === 'status' ? 'panel-mobile-active' : ''}`}>
+                <div className="p-3 border-b border-gray-200 text-xs font-bold uppercase tracking-wide bg-gray-50 flex justify-between items-center text-gray-500">
+                    <span>行动序列 Turn Order</span>
+                    <span>HP</span>
+                </div>
+                <div className="divide-y divide-gray-100">
+                    {combatOrder.map((c, i) => {
+                        const isActive = i === turn.index % combatOrder.length;
+                        const isTarget = selectedTargetId === c.id;
+                        return (
+                            <div 
+                                key={c.id}
+                                onClick={() => setSelectedTargetId(c.id)}
+                                className={`char-card px-4 py-3 ${c.type === 'player' ? 'faction-strip-player' : 'faction-strip-enemy'} ${isActive ? 'selected' : ''} ${isTarget ? 'target-selected' : ''}`}
+                            >
+                                <div className="flex justify-between items-center">
+                                    <div className="overflow-hidden">
+                                        <div className={`char-name font-bold text-sm ${isActive ? 'text-black' : 'text-gray-700'}`}>{c.name}</div>
+                                        <div className="flex gap-2 text-[10px] text-gray-400 font-mono mt-1">
+                                            <span>DEX {c.hasGunReady ? c.dex + 50 : c.dex}</span>
+                                            <span className="border-l pl-2">体格 {c.build}</span>
+                                        </div>
+                                    </div>
+                                    <div className="text-right pl-2">
+                                        <div className={`font-mono font-bold text-sm ${c.hp < c.maxHp/2 ? 'text-red-600' : 'text-black'}`}>
+                                            {c.hp}/{c.maxHp}
+                                        </div>
+                                        <div className="flex gap-1 mt-1 justify-end flex-wrap max-w-[80px]">
+                                            {c.status.majorWound && <span className="text-[9px] bg-red-600 text-white px-1 rounded-sm">重伤</span>}
+                                            {c.status.dying && <span className="text-[9px] bg-black text-white px-1 rounded-sm">濒死</span>}
+                                            {c.status.unconscious && <span className="text-[9px] bg-gray-500 text-white px-1 rounded-sm">昏迷</span>}
+                                            {c.status.prone && <span className="text-[9px] bg-gray-300 text-black px-1 rounded-sm">倒地</span>}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* 中间操作区 */}
+            <div className={`panel-center ${mobileTab === 'action' ? 'panel-mobile-active' : ''}`}>
+                <div className="bg-black text-white p-4 shadow-md sticky top-0 z-20">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">当前行动 Current</div>
+                            <div className="font-bold text-xl">{currentActor?.name || '-'}</div>
+                            {currentActor && <div className="text-xs text-gray-400 mt-1">斗殴 {currentActor.fight} | 闪避 {currentActor.dodge} | 射击 {currentActor.firearms}</div>}
+                        </div>
+                        <div className="text-right">
+                            <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">目标 Target</div>
+                            <div className={`font-bold text-xl ${targetActor ? 'text-white' : 'text-gray-600 italic'}`}>{targetActor?.name || '未选择'}</div>
+                            {targetActor && <div className="text-xs text-gray-400 mt-1">HP {targetActor.hp}/{targetActor.maxHp}</div>}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="action-area">
+                    <div className="centered-card p-6">
+                        {/* Phase: Select Action */}
+                        {phase === 'select_action' && !showMedical && (
+                            <>
+                                {!selectedTargetId ? (
+                                    <div className="text-center text-gray-400 py-10">
+                                        <div className="text-3xl mb-2">👈</div>
+                                        <div className="text-sm">请在左侧选择目标<br/>Select a target from list</div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Attack Group */}
+                                        <div className="mb-6">
+                                            <div className="label mb-2 text-black">攻击动作 Attack</div>
+                                            <div className="grid grid-cols-1 gap-3">
+                                                <button onClick={handleMeleeAttack} className="action-btn primary">
+                                                    <span>⚔️ 近战攻击 Melee</span>
+                                                    <span className="detail">{currentActor?.meleeWeapon?.name || '拳头'} ({currentActor?.meleeWeapon?.damage || '1D3'})</span>
+                                                </button>
+
+                                                {currentActor?.rangedWeapon ? (
+                                                    <div className="action-btn flex-col items-stretch gap-2 p-3">
+                                                        <div className="flex justify-between items-center w-full" onClick={currentActor.rangedWeapon.ammo > 0 ? handleRangedAttack : null}>
+                                                            <span className="font-bold">🔫 射击 Fire</span>
+                                                            <span className="detail">{currentActor.rangedWeapon.name} ({currentActor.rangedWeapon.damage})</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 border-t border-gray-200 pt-2 mt-1">
+                                                            <span className="text-[10px] font-bold text-gray-500 uppercase">距离 Dist:</span>
+                                                            <div className="w-16"><SmartInput value={shootingDistance} onChange={setShootingDistance} /></div>
+                                                            <span className="text-[10px] text-gray-400">/ {currentActor.rangedWeapon.range}yd</span>
+                                                            <span className="ml-auto text-xs font-mono bg-black text-white px-2 py-0.5 rounded-sm">AMMO: {currentActor.rangedWeapon.ammo}</span>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center text-gray-400 py-2 text-xs border border-dashed border-gray-300">无远程武器 No Ranged Weapon</div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Maneuver Group */}
+                                        <div className="mb-6">
+                                            <div className="label mb-2">战斗策略 Maneuver</div>
+                                            <div className="border border-gray-200 p-3 bg-gray-50">
+                                                <div className="grid grid-cols-4 gap-2 mb-3">
+                                                    {['disarm','knockdown','grapple','push'].map(m => (
+                                                        <button key={m} onClick={() => setManeuverType(m)} className={`p-2 text-[10px] font-bold uppercase border transition-colors ${maneuverType === m ? 'bg-black text-white border-black' : 'bg-white border-gray-300 text-gray-500'}`}>
+                                                            {m === 'disarm' ? '缴械' : m === 'knockdown' ? '击倒' : m === 'grapple' ? '压制' : '推撞'}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <button onClick={handleManeuver} className="action-btn py-2 text-xs">执行战技 Execute Maneuver</button>
+                                            </div>
+                                        </div>
+
+                                        {/* Utility Group */}
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <button onClick={() => setShowMedical(true)} className="action-btn py-3 justify-center text-gray-600 border-gray-300">
+                                                💊 医疗 Medical
+                                            </button>
+                                            <button onClick={nextTurn} className="action-btn py-3 justify-center text-gray-400 border-dashed border-gray-300 hover:text-red-500 hover:border-red-500 hover:bg-white">
+                                                跳过 Skip
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </>
+                        )}
+
+                        {/* Medical Panel */}
+                        {phase === 'select_action' && showMedical && (
+                            <div className="space-y-4">
+                                <div className="text-center font-bold text-sm uppercase border-b border-black pb-3 mb-4">
+                                    💊 医疗行动 Medical
+                                </div>
+                                
+                                <div className="bg-blue-50 p-3 border border-blue-100 rounded-sm">
+                                    <div className="text-xs text-blue-800 font-bold mb-1">治疗者 Healer</div>
+                                    <div className="font-bold">{currentActor?.name}</div>
+                                    <div className="text-xs text-blue-600 mt-1">急救 {currentActor?.firstAid || 30}% | 医学 {currentActor?.medicine || 5}%</div>
+                                </div>
+
+                                <div className="label">骰子调整 Modifier</div>
+                                <DiceModifierSelector value={diceModifier} onChange={setDiceModifier} />
+
+                                <div className="grid grid-cols-1 gap-3">
+                                    <button onClick={performFirstAid} disabled={!targetActor} className="action-btn">
+                                        <span className="font-bold">🩹 急救 First Aid</span>
+                                        <span className="detail">1D100 / 恢复1HP</span>
+                                    </button>
+                                    <button onClick={performMedicine} disabled={!targetActor} className="action-btn">
+                                        <span className="font-bold">⚕️ 医学 Medicine</span>
+                                        <span className="detail">1D100 / 恢复1D3 HP</span>
+                                    </button>
+                                </div>
+
+                                <button onClick={() => setShowMedical(false)} className="w-full mt-4 py-2 text-xs text-gray-500 underline hover:text-black">← 返回 Back</button>
+                            </div>
+                        )}
+
+                        {/* Defense Phase */}
+                        {phase === 'waiting_defense' && (
+                            <div className="space-y-6">
+                                <div className="flex justify-between items-center p-4 border border-black bg-gray-50">
+                                    <div className="text-center">
+                                        <div className="font-bold text-lg">{combatAction?.attacker.name}</div>
+                                        <div className="text-[10px] bg-black text-white px-2 py-0.5 inline-block uppercase mt-1">攻击者 ATK</div>
+                                    </div>
+                                    <div className="font-black text-2xl text-gray-300">VS</div>
+                                    <div className="text-center">
+                                        <div className="font-bold text-lg">{combatAction?.target.name}</div>
+                                        <div className="text-[10px] bg-gray-500 text-white px-2 py-0.5 inline-block uppercase mt-1">防御者 DEF</div>
+                                    </div>
+                                </div>
+                                
+                                {targetActor?.status.defenseUsedThisRound && (
+                                    <div className="text-xs text-center p-2 bg-yellow-50 text-yellow-800 border border-yellow-200 font-bold">
+                                        ⚠️ 本轮已防御 (攻击获得奖励骰)
+                                    </div>
+                                )}
+                                
+                                <div className="label mb-2 text-center">选择防御手段 Choose Defense</div>
+                                <div className="grid grid-cols-1 gap-3">
+                                    <button 
+                                        onClick={() => {
+                                            setCombatAction(p => ({ ...p, defenseType: 'counter', defenderSkill: targetActor.fight }));
+                                            setPhase('input_roll');
+                                        }} 
+                                        className="action-btn primary justify-center flex-col gap-1 py-4"
+                                    >
+                                        <span className="text-lg">⚔️ 反击 Fight Back</span>
+                                        <span className="text-xs opacity-70 font-mono">技能: {targetActor?.fight}%</span>
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            setCombatAction(p => ({ ...p, defenseType: 'dodge', defenderSkill: targetActor.dodge }));
+                                            setPhase('input_roll');
+                                        }} 
+                                        className="action-btn justify-center flex-col gap-1 py-4"
+                                    >
+                                        <span className="text-lg">💨 闪避 Dodge</span>
+                                        <span className="text-xs text-gray-500 font-mono">技能: {targetActor?.dodge}%</span>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Roll Input Phase */}
+                        {(['input_roll', 'input_defense_roll', 'input_damage'].includes(phase)) && combatAction && (
+                            <div className="space-y-6">
+                                <div className="text-center border-b border-black pb-3">
+                                    <div className="font-bold text-sm uppercase">
+                                        {phase === 'input_damage' ? '伤害检定 Damage Roll' : phase === 'input_roll' ? `${currentActor.name} 检定` : `${targetActor.name} 防御检定`}
+                                    </div>
+                                </div>
+                                
+                                {phase !== 'input_damage' && (
+                                    <>
+                                        <div className="text-center bg-gray-50 p-4 border border-gray-100">
+                                            <div className="label">目标值 Target Number</div>
+                                            <div className="text-5xl font-mono font-bold mt-2">
+                                                {phase === 'input_roll' 
+                                                    ? (combatAction.type === 'ranged' ? currentActor.firearms : combatAction.attackerSkill) 
+                                                    : combatAction.defenderSkill}
+                                            </div>
+                                        </div>
+                                        <DiceModifierSelector value={diceModifier} onChange={setDiceModifier} />
+                                    </>
+                                )}
+                                
+                                {phase === 'input_damage' && (
+                                    <div className="text-center font-mono text-sm p-3 bg-red-50 border border-red-100 text-red-800">
+                                        <div className="font-bold">使用武器 Weapon</div>
+                                        {combatAction.weapon?.name} ({combatAction.weapon?.damage})
+                                    </div>
+                                )}
+                                
+                                <div className="flex gap-3 items-end">
+                                    <div className="flex-1">
+                                        <SmartInput 
+                                            value={inputValue} 
+                                            onChange={setInputValue}
+                                            label={phase === 'input_damage' ? "输入伤害值 Damage" : "输入检定结果 Result (1-100)"}
+                                        />
+                                    </div>
+                                    <button 
+                                        onClick={() => {
+                                            if (phase === 'input_damage') {
+                                                const dmg = calculateDamage(combatAction.weapon, combatAction.damageAttacker, combatAction.damageSuccessLevel || 1, !!combatAction.isCounterAttack);
+                                                setInputValue(String(dmg.total));
+                                            } else {
+                                                const targetNum = phase === 'input_roll' 
+                                                    ? (combatAction.type === 'ranged' ? currentActor.firearms : combatAction.attackerSkill) 
+                                                    : combatAction.defenderSkill;
+                                                openStepDiceRoller(targetNum, null);
+                                            }
+                                        }} 
+                                        className="h-[52px] w-[52px] bg-black text-white flex items-center justify-center text-2xl border border-black hover:bg-gray-800"
+                                    >
+                                        🎲
+                                    </button>
+                                </div>
+                                
+                                <button 
+                                    onClick={phase === 'input_damage' ? handleDamage : phase === 'input_defense_roll' ? handleDefenseRoll : handleRoll} 
+                                    disabled={!inputValue} 
+                                    className="action-btn primary justify-center py-4 text-base"
+                                >
+                                    确认 Confirm
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* 右侧日志 */}
+            <div className={`panel-right ${mobileTab === 'log' ? 'panel-mobile-active' : ''}`}>
+                <div className="p-3 border-b border-gray-200 text-xs font-bold uppercase tracking-wide bg-gray-50 text-gray-500">战斗记录 Combat Log</div>
+                <div className="log-scroll-area" ref={logContainerRef}>
+                    {logs.map(log => (
+                        <div key={log.id} className="mb-2 group">
+                            <div className="text-[9px] text-gray-400 mb-0.5 font-mono group-hover:text-gray-600 transition-colors">{log.time}</div>
+                            <div className={`log-item ${log.type}`}>{log.text}</div>
+                        </div>
+                    ))}
+                    {logs.length === 0 && <div className="text-center text-gray-300 text-xs mt-10 italic">暂无记录 No logs yet...</div>}
+                </div>
+            </div>
+
+            {/* 移动端底部导航 */}
+            <div className="mobile-nav">
+                {['status','action','log'].map(tab => (
+                    <button key={tab} onClick={() => setMobileTab(tab)} className={`flex flex-col items-center justify-center w-full h-full transition-colors ${mobileTab === tab ? 'text-black bg-gray-50' : 'text-gray-400'}`}>
+                        <span className="text-xl mb-1">{tab === 'status' ? '📊' : tab === 'action' ? '⚔️' : '📜'}</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wide">{tab === 'status' ? '状态' : tab === 'action' ? '行动' : '记录'}</span>
+                    </button>
+                ))}
+            </div>
+            
+            <StepDiceRoller 
+                isOpen={showStepDice}
+                modifier={diceModifier}
+                targetNumber={stepDiceTargetNumber}
+                onComplete={handleStepDiceComplete}
+                onClose={() => setShowStepDice(false)}
+            />
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
